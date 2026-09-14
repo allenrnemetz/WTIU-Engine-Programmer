@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""WTIU firmware patcher: stock v1.3.0 image -> patched v1.3.3 image.
+"""WTIU firmware patcher: stock v1.3.0 image -> patched v1.3.4 image.
 
 Takes a stock MTH WTIU firmware .bin (WTIU-v1.3.0-20250814.bin), applies our
 binary patches to usr/bin/wtiu and usr/bin/mux2tiu inside the squashfs,
-stamps the version strings, and reassembles a flashable sysupgrade image.
+patches the Track Processor blob lib/firmware/tp-v2.05-0-g049bee4.bin for
+chopped-waveform (Lionel ZW-L) input tolerance, stamps the version strings,
+and reassembles a flashable sysupgrade image.  The patched TP blob is
+flashed automatically at first boot: tp_config sees the cksum mismatch and
+reflashes the STM32 via stm32flash.
 
 Copyright-safe by construction: this tool contains only our patch hunks
 (wtiu_patch_data.py) -- no MTH code. The user supplies the stock image.
@@ -13,13 +17,12 @@ Runs on Linux / WSL / macOS.
 
 Usage:
     python3 wtiu_fw_patch.py WTIU-v1.3.0-20250814.bin
-    python3 wtiu_fw_patch.py stock.bin -o WTIU-v1.3.3-20260911.bin
+    python3 wtiu_fw_patch.py stock.bin -o WTIU-v1.3.4-20260912.bin
 """
 
 import argparse
 import binascii
 import hashlib
-import json
 import os
 import re
 import shutil
@@ -31,9 +34,10 @@ import tempfile
 from wtiu_patch_data import (
     WTIU_STOCK_SHA256, WTIU_PATCHED_SHA256, WTIU_SIZE, WTIU_HUNKS,
     MUX2TIU_STOCK_SHA256, MUX2TIU_PATCHED_SHA256, MUX2TIU_SIZE, MUX2TIU_HUNKS,
+    TP_STOCK_SHA256, TP_PATCHED_SHA256, TP_SIZE, TP_HUNKS,
 )
 
-VERSION = 'v1.3.3-20260911'
+VERSION = 'v1.3.4-20260912'
 REVISION = 'r26639-4dcf577f9d'
 
 # Regex matches the stock stamp and any previously-stamped release.
@@ -129,7 +133,7 @@ def fwimage_info_part(image, data):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=__doc__.split('\n', maxsplit=1)[0])
     ap.add_argument('input', help='stock WTIU v1.3.0 firmware .bin')
     ap.add_argument('-o', '--output',
                     help=f'output path (default: WTIU-{VERSION}.bin '
@@ -168,7 +172,7 @@ def main():
         # Real failures still surface: the hunk step below refuses if the
         # target binaries didn't extract.
         subprocess.run(['unsquashfs', '-d', rootfs, '-ig', '-no-exit-code',
-                        sqfs_path], capture_output=True)
+                        sqfs_path], capture_output=True, check=False)
         if not os.path.isdir(rootfs):
             die('unsquashfs produced no rootfs — corrupt image?')
 
@@ -178,6 +182,8 @@ def main():
              WTIU_PATCHED_SHA256, WTIU_SIZE),
             ('usr/bin/mux2tiu', MUX2TIU_HUNKS, MUX2TIU_STOCK_SHA256,
              MUX2TIU_PATCHED_SHA256, MUX2TIU_SIZE),
+            ('lib/firmware/tp-v2.05-0-g049bee4.bin', TP_HUNKS,
+             TP_STOCK_SHA256, TP_PATCHED_SHA256, TP_SIZE),
         ):
             p = os.path.join(rootfs, rel)
             if not os.path.isfile(p):

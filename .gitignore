@@ -1,0 +1,5 @@
+*.bin
+__pycache__/
+*.pyc
+*.mfg-recovery.bin
+*.sector-*-recovery.bin
