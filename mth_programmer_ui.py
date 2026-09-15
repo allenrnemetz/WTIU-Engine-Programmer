@@ -61,7 +61,7 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
     def __init__(self, root):
         self.root = root
         self.root.title("MTH Engine Programmer")
-        self.root.geometry("900x700")
+        self.root.geometry("900x900")
 
         self.conn = None
         self.prog = None
@@ -131,18 +131,14 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
     def _confirm_write(self, action_desc):
         """Show a confirmation dialog before any write operation.
 
-        Every write ultimately goes through the custom firmware's W command,
-        which returns "okay" unconditionally.  As of the 2026-08-31 hardware
-        session it has never been observed to modify locomotive flash, so the
-        dialog says so rather than letting a green log line imply success.
+        Writes go through the patched firmware's ZB/ZD/ZE session (or the
+        per-block W fallback) and are verified by readback — the "okay"
+        response is never trusted on its own.
         """
         msg = (f"You are about to: {action_desc}\n\n"
-               "KNOWN ISSUE: writes through the WTIU are not confirmed to "
-               "work. The W command reports success unconditionally, and no "
-               "write has yet been observed to change flash. Reads are "
-               "unaffected.\n\n"
-               "Always re-read the affected range afterwards to check whether "
-               "anything actually changed.\n\n"
+               "This erases and rewrites engine flash. Exactly one engine "
+               "should be powered on the track, and power must not be "
+               "removed during the write.\n\n"
                "Are you sure you want to continue?")
         return messagebox.askyesno("Confirm Write Operation", msg,
                                    icon='warning')
@@ -336,6 +332,59 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
 
         ttk.Button(write_frame, text="Write .mth -> Flash",
                    command=self.run_write_sound).grid(row=3, column=0,
+                                                      columnspan=3, pady=4)
+
+        # Flash recovery section
+        rec_frame = ttk.LabelFrame(tab, text="Flash Recovery (raw image restore)",
+                                   padding=8)
+        rec_frame.pack(fill='x', pady=4)
+
+        ttk.Label(rec_frame, text="Image file:").grid(row=0, column=0, padx=2)
+        self.restore_img_var = tk.StringVar(value="")  # pylint: disable=attribute-defined-outside-init
+        ttk.Entry(rec_frame, textvariable=self.restore_img_var,
+                  width=40).grid(row=0, column=1, padx=2)
+        ttk.Button(rec_frame, text="Browse...",
+                   command=lambda: self._browse_open(self.restore_img_var)).grid(
+            row=0, column=2, padx=2)
+
+        rec_opts = ttk.Frame(rec_frame)
+        rec_opts.grid(row=1, column=0, columnspan=3, pady=4, sticky='w')
+        self.force_bl_var = tk.BooleanVar(value=False)  # pylint: disable=attribute-defined-outside-init
+        ttk.Checkbutton(rec_opts, text="Force bootloader region (DANGEROUS)",
+                        variable=self.force_bl_var).pack(side='left', padx=4)
+
+        ttk.Label(rec_frame,
+                  text="Accepts a .flash_backup or full-flash .mth image. "
+                       "Bootloader/DSP sector is skipped unless forced.",
+                  foreground="gray").grid(row=2, column=0, columnspan=3,
+                                          pady=2, sticky='w')
+
+        ttk.Button(rec_frame, text="Restore Image -> Flash",
+                   command=self.run_restore_flash).grid(row=3, column=0,
+                                                        columnspan=3, pady=4)
+
+        # Full image (consumer download zip) section
+        img_frame = ttk.LabelFrame(tab,
+                                   text="Full Image (consumer download .zip)",
+                                   padding=8)
+        img_frame.pack(fill='x', pady=4)
+
+        ttk.Label(img_frame, text="Zip file:").grid(row=0, column=0, padx=2)
+        self.image_zip_var = tk.StringVar(value="")  # pylint: disable=attribute-defined-outside-init
+        ttk.Entry(img_frame, textvariable=self.image_zip_var,
+                  width=40).grid(row=0, column=1, padx=2)
+        ttk.Button(img_frame, text="Browse...",
+                   command=lambda: self._browse_open(self.image_zip_var)).grid(
+            row=0, column=2, padx=2)
+
+        ttk.Label(img_frame,
+                  text="MTH consumer download zip — writes chain code "
+                       "regions AND the sound file in one pass.",
+                  foreground="gray").grid(row=1, column=0, columnspan=3,
+                                          pady=2, sticky='w')
+
+        ttk.Button(img_frame, text="Write Zip -> Engine",
+                   command=self.run_write_image).grid(row=2, column=0,
                                                       columnspan=3, pady=4)
 
     # ========================================================================
@@ -1018,6 +1067,74 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
                     append_dealer_log(self.logfile_var.get(), dealer, eng_info)
         else:
             print("Failed to write sound file")
+
+    def run_restore_flash(self):
+        """Restore engine flash from a raw image (.flash_backup/.mth)."""
+        if not self._check_connected():
+            return
+        path = self.restore_img_var.get().strip()
+        if not path:
+            messagebox.showerror("Error", "Choose an image file first")
+            return
+        force_bl = self.force_bl_var.get()
+        desc = (f"restore {path} to engine flash — this erases and "
+                f"rewrites whole flash sectors")
+        if force_bl:
+            desc += (" — INCLUDING the bootloader/DSP region: if the "
+                     "program-mode code lives there, a failed write "
+                     "leaves the engine unrecoverable")
+        if not self._confirm_write(desc):
+            print("Aborted.")
+            return
+        self._run_in_thread(lambda: self._do_restore_flash(path, force_bl))
+
+    def _do_restore_flash(self, path, force_bl):
+        """Worker that restores a raw flash image to the engine."""
+        print(f"\n=== Restoring Flash Image: {path} ===")
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+        except OSError as e:
+            print(f"Cannot read {path}: {e}")
+            return
+        if not self.prog.setup_engine():
+            return
+        if self.prog.restore_flash(data, force_bootloader=force_bl,
+                                   assume_yes=True):
+            print("Flash image restored successfully!")
+        else:
+            print("Restore failed or incomplete — see log")
+
+    def run_write_image(self):
+        """Program the engine from a consumer download zip (chain+sound)."""
+        if not self._check_connected():
+            return
+        path = self.image_zip_var.get().strip()
+        if not path:
+            messagebox.showerror("Error", "Choose a consumer zip first")
+            return
+        if not self._confirm_write(
+                f"program the engine from {path} — writes chain code "
+                "regions AND the sound file in one pass"):
+            print("Aborted.")
+            return
+        self._run_in_thread(lambda: self._do_write_image(path))
+
+    def _do_write_image(self, path):
+        """Worker that programs the engine from a consumer zip."""
+        print(f"\n=== Writing Consumer Image: {path} ===")
+        if not self.prog.setup_engine():
+            return
+        if self.prog.write_consumer_zip(
+                path,
+                preserve_mfg=self.preserve_mfg_var.get(),
+                validate=self.validate_var.get(),
+                stamp_loader=self.stamp_loader_var.get(),
+                backup_flash=self.backup_flash_var.get(),
+                assume_yes=True, confirm_cb=self._confirm):
+            print("Consumer image written successfully!")
+        else:
+            print("Image write failed — see log")
 
     # ========================================================================
     # SN File Actions

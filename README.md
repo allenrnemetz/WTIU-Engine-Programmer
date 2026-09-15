@@ -116,6 +116,9 @@ python mth_programmer_ui.py
 CLI examples:
 
 ```bash
+# Program everything from a consumer download zip (chain code + sound file)
+python mth_engine_programmer.py --write-image r22a_f_sw1200__md_231123aupd-cnsmr.zip
+
 # Write a sound file
 python mth_engine_programmer.py --write-sound engine_sound.mth
 
@@ -142,6 +145,41 @@ Exactly one engine should be powered on the track during programming.
 - Every write is verified by readback. A command "okay" response is never
   trusted on its own.
 - Bootloader/DSP/FPGA safeguards are enforced unless explicitly overridden.
+
+## Recovering a scrambled board
+
+A bad sound-file transfer (wrong file, interrupted write) can scramble an
+engine's flash. Whether it can be recovered **over the track** depends on
+one thing: does the program-mode code still run?
+
+- **Recoverable** — the write hit sound/app regions but the engine still
+  answers commands. Diagnostic: put the engine on the track and run any
+  read — if engine setup and program entry succeed, it can be recovered.
+- **Dead on the wire** — the write reached the bootloader/DSP region that
+  hosts program mode. The engine can't parse commands at all; this is the
+  "send it back to MTH" case (bench-level reflash), not fixable in
+  software.
+
+Recovery paths, once setup succeeds:
+
+```bash
+# 1. Correct .mth exists — just write it (validated against the engine's EIS)
+python mth_engine_programmer.py --write-sound correct_file.mth
+
+# 2. You have a backup image from --backup-flash / --dump-flash
+python mth_engine_programmer.py --restore-flash engine.flash_backup
+
+# 3. No backup, no valid .mth — image a healthy twin (same PCB rev!) and restore
+python mth_engine_programmer.py --dump-flash donor.flash_backup     # on the good engine
+python mth_engine_programmer.py --restore-flash donor.flash_backup  # on the dead one
+```
+
+`--restore-flash` erases and rewrites flash sector-by-sector with readback
+verification, skipping the EIS bootloader/DSP region by default.
+`--restore-sector 0xADDR` / `--restore-range START END` restrict the
+restore; `--force-bootloader` includes the protected region — last resort
+only, since you'd be rewriting the region that may host the program-mode
+code you're communicating through.
 
 ## PS2 engines (experimental)
 

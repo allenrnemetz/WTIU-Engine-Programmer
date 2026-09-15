@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 *.mfg-recovery.bin
 *.sector-*-recovery.bin
+*.flash_backup
+
+# MTH content — never commit
+*.mth
+*.zip
+r22a_sw1200/

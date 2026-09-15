@@ -2682,7 +2682,8 @@ class EngineProgrammer:  # pylint: disable=too-many-public-methods
                 # flash corruption.
                 try:
                     self.conn.send_cmd('ZE', timeout=10.0)
-                except Exception as exc:
+                except Exception as exc:  # pylint: disable=broad-except
+                    # cleanup must never mask the real write result
                     print(f'    ZE (session close) failed: {exc}')
             if progress:
                 dt = time.time() - t0
@@ -2761,6 +2762,224 @@ class EngineProgrammer:  # pylint: disable=too-many-public-methods
             return False
         print(f'  ZB @0x{addr:06X} failed: {resp.strip()}')
         return False
+
+    def _sector_start(self, addr):
+        """Start address of the flash sector containing addr."""
+        if addr < 0x004000:
+            return 0x000000
+        if addr < 0x006000:
+            return 0x004000
+        if addr < 0x008000:
+            return 0x006000
+        if addr < 0x080000:
+            return 0x008000
+        return (addr // 0x20000) * 0x20000
+
+    def _flash_sectors(self, flash_size):
+        """All (start, end) sector bounds up to flash_size."""
+        sectors = []
+        addr = 0
+        while addr < flash_size:
+            end = addr + self._sector_size_for_addr(addr)
+            sectors.append((addr, end))
+            addr = end
+        return sectors
+
+    def dump_flash(self, output_path, flash_size=None):
+        """Read the entire flash and save it as a .flash_backup image.
+
+        Same raw-image format --write-sound --backup-flash produces, so
+        restore_flash() can consume it directly.  Used for donor imaging:
+        dump a healthy engine, restore its scrambled twin (same PCB rev).
+        """
+        if flash_size is None:
+            flash_size = self.detect_flash_size()
+        if not flash_size:
+            print("  ERROR: could not determine flash size "
+                  "(use --flash-size)")
+            return False
+        data = self.read_flash_range(0, flash_size)
+        if data is None:
+            print("  ERROR: full flash read failed")
+            return False
+        with open(output_path, 'wb') as f:
+            f.write(data)
+        print(f"  Saved {len(data)} bytes to {output_path}")
+        return True
+
+    def restore_flash(self, backup_data, sector=None, range_bounds=None,
+                      force_bootloader=False, assume_yes=False):
+        """Restore engine flash from a .flash_backup image.
+
+        Erases and rewrites whole flash sectors, each verified by
+        readback.  Recovery requires the engine's program-mode path to
+        still answer commands -- if setup_engine() fails, the board is
+        unrecoverable over the wire.
+
+        sector/range_bounds restrict the restore.  Sectors overlapping
+        the EIS bootloader/DSP region are skipped unless
+        force_bootloader -- that region may host the program-mode code,
+        so forcing is a last resort.
+        """
+        eis = self.read_eis_records()
+        bl_start = bl_end = None
+        if eis and eis.get('dsp_addr'):
+            bl_start = eis['dsp_addr']
+            bl_end = bl_start + eis.get('dsp_max_len', 0)
+            print(f"  Bootloader/DSP region: 0x{bl_start:06X}-0x{bl_end:06X}")
+        else:
+            print("  WARNING: could not read EIS -- bootloader protection "
+                  "disabled; all sectors will be restored")
+
+        flash_size = len(backup_data)
+        if sector is not None:
+            s = self._sector_start(sector)
+            targets = [(s, s + self._sector_size_for_addr(s))]
+        elif range_bounds:
+            rs, re_ = range_bounds
+            targets = [(s, e) for s, e in self._flash_sectors(flash_size)
+                       if s >= rs and e <= re_]
+        else:
+            targets = self._flash_sectors(flash_size)
+
+        if not force_bootloader and bl_start is not None:
+            skipped = [(s, e) for s, e in targets
+                       if s < bl_end and e > bl_start]
+            targets = [(s, e) for s, e in targets
+                       if not (s < bl_end and e > bl_start)]
+            for s, e in skipped:
+                print(f"  Skipping 0x{s:06X}-0x{e:06X} "
+                      "(bootloader protected)")
+
+        if not targets:
+            print("  No sectors to restore.")
+            return False
+
+        total = sum(e - s for s, e in targets)
+        n_blocks = (total + BURST_DATA_MAX - 1) // BURST_DATA_MAX
+        print(f"\n*** ABOUT TO RESTORE {len(targets)} SECTORS "
+              f"({total} bytes) ***")
+        per_di, _ = self.calibrate_timing()
+        if per_di is not None:
+            # ZD session ~= 1 DI round-trip per 27-byte block; the W
+            # fallback ~= 8 per block.
+            print(f"  ~{n_blocks} blocks: ~{n_blocks * per_di / 60:.0f} min "
+                  f"(ZD session) to ~{n_blocks * 8 * per_di / 60:.0f} min "
+                  "(W fallback), plus readback verification")
+        print("  Do not remove power or the engine from the track!")
+        if not assume_yes:
+            if input("  Type 'YES' to continue: ") != 'YES':
+                print("Aborted.")
+                return False
+
+        if not self.enter_fast_mode():
+            print("  Warning: could not enter fast programming mode")
+
+        recovered, failed = 0, []
+        for s, e in targets:
+            size = e - s
+            print(f"\n  Restoring sector 0x{s:06X}-0x{e:06X} "
+                  f"({size} bytes)...")
+            data = backup_data[s:e]
+            if len(data) < size:
+                data += b'\xFF' * (size - len(data))
+            if not self.erase_at_addr(s, allow_mfg=True,
+                                      allow_bootloader=True):
+                print(f"  ERROR: erase failed at 0x{s:06X}")
+                failed.append(s)
+                continue
+            if not self.write_raw(s, data, allow_mfg=True,
+                                  allow_bootloader=True):
+                print(f"  ERROR: write failed at 0x{s:06X}")
+                failed.append(s)
+                continue
+            if not self.verify_raw(s, data):
+                print(f"  ERROR: verify failed at 0x{s:06X}")
+                failed.append(s)
+                continue
+            recovered += 1
+            print("  Sector restored")
+
+        print("\n  Post-restore restart sequence...")
+        self._post_write_restart()
+        self.enter_normal_mode()
+
+        print(f"\n  Sectors restored: {recovered}/{len(targets)}")
+        if failed:
+            print("  FAILED: " + ", ".join(f"0x{s:06X}" for s in failed))
+            print("  Engine may be partially recovered -- retry the "
+                  "failed sectors with --restore-sector")
+            return False
+        print("  All sectors restored successfully!")
+        return True
+
+    def write_consumer_zip(self, zip_path, preserve_mfg=True, validate=True,
+                           stamp_loader=True, backup_flash=False,
+                           assume_yes=False, confirm_cb=None):
+        """Program an engine from a consumer download zip (-cnsmr.zip).
+
+        The consumer zip wraps the whole payload: the chain code zip
+        (code regions: DSP/FPGA/DCC_CV/Hardware/Boiler) and the .mth
+        sound file.  Mirrors the loader's board-prep order — chain code
+        first (the 'brain'), then the sound file (the 'personality') —
+        and aborts before the sound write if the chain write fails.
+
+        Exactly one engine should be powered on the track.
+        """
+        print("\n=== Consumer Zip Write ===")
+        print(f"  Zip file: {zip_path}")
+        if not zipfile.is_zipfile(zip_path):
+            print(f"  ERROR: not a zip: {zip_path}")
+            return False
+
+        with tempfile.TemporaryDirectory(prefix='mth_cnsmr_') as td:
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(td)
+            mths = sorted(f for f in os.listdir(td)
+                          if f.lower().endswith('.mth'))
+            chains = sorted(f for f in os.listdir(td)
+                            if f.lower().endswith('.zip'))
+            if not mths and not chains:
+                print("  ERROR: no .mth or chain zip found inside")
+                return False
+            if len(mths) > 1 or len(chains) > 1:
+                print(f"  WARNING: multiple payloads ({len(mths)} .mth, "
+                      f"{len(chains)} .zip) — using first of each")
+            print("  Payload:")
+            for f_ in chains:
+                print(f"    chain zip:   {f_}")
+            for f_ in mths:
+                print(f"    sound file:  {f_}")
+
+            if not assume_yes:
+                parts = []
+                if chains:
+                    parts.append(f"chain code ({chains[0]})")
+                if mths:
+                    parts.append(f"sound file ({mths[0]})")
+                if not self._ask_yes(
+                        "Write " + " + ".join(parts) + " to the engine? "
+                        "Type 'YES' to continue: ", confirm_cb):
+                    print("Aborted.")
+                    return False
+
+            if chains:
+                if not self.write_chain_zip(os.path.join(td, chains[0]),
+                                            assume_yes=True,
+                                            confirm_cb=confirm_cb):
+                    print("  ERROR: chain write failed — aborting "
+                          "before the sound write")
+                    return False
+            if mths:
+                if not self.write_sound_file(
+                        os.path.join(td, mths[0]),
+                        preserve_mfg=preserve_mfg, validate=validate,
+                        stamp_loader=stamp_loader,
+                        backup_flash=backup_flash,
+                        assume_yes=True, confirm_cb=confirm_cb):
+                    return False
+        print("\n  Consumer image written successfully!")
+        return True
 
     def write_engine_info(self, new_data):  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,too-many-return-statements
         """Write engine info data to flash at 0x001DD2.
@@ -5183,6 +5402,18 @@ Examples:
 
   # Write chain/DSP code with explicit flash address
   %(prog)s --write-chain cv-hdr-3226-STEAM.srec --dsp-addr 0x041001 --dsp-max-len 0x5250
+
+  # Dump the entire flash (donor imaging / standalone backup)
+  %(prog)s --dump-flash healthy_donor.flash_backup
+
+  # Restore an engine from a flash image (bootloader/DSP sector skipped)
+  %(prog)s --restore-flash healthy_donor.flash_backup
+
+  # Restore only the manufacturing sector
+  %(prog)s --restore-flash backup.flash_backup --restore-sector 0x004000
+
+  # Program an engine from the consumer download zip (chain + sound, one pass)
+  %(prog)s --write-image r22a_f_sw1200__md_231123aupd-cnsmr.zip
 """)
     parser.add_argument('--host', default=None,
                         help='WTIU IP or mDNS name (e.g. 192.168.1.174 or '
@@ -5287,6 +5518,23 @@ Examples:
                         help='Load MTH serial number file and write fields to engine')
     parser.add_argument('--info-srec', metavar='SREC_FILE',
                         help='Parse and display S-record file info (no engine connection needed)')
+    parser.add_argument('--dump-flash', metavar='FILE',
+                        help='Read the full flash to FILE (.flash_backup '
+                             'image for donor imaging or --restore-flash)')
+    parser.add_argument('--restore-flash', metavar='FILE',
+                        help='Restore flash from a .flash_backup image '
+                             '(per-sector erase/write/verify)')
+    parser.add_argument('--restore-sector', metavar='ADDR',
+                        help='Restore only the sector containing ADDR (hex)')
+    parser.add_argument('--restore-range', nargs=2,
+                        metavar=('START', 'END'),
+                        help='Restore sectors fully inside START-END (hex)')
+    parser.add_argument('--force-bootloader', action='store_true',
+                        help='Allow restoring the bootloader/DSP sector '
+                             '(DANGEROUS — it may host program-mode code)')
+    parser.add_argument('--write-image', metavar='FILE',
+                        help='Program engine from a consumer download zip '
+                             '(-cnsmr.zip): chain code + sound file in one pass')
     parser.add_argument('--write-chain', metavar='FILE',
                         help='Write chain/DSP code from S-record (.srec) or '
                              'chain zip (.zip) file to engine flash')
@@ -5333,6 +5581,8 @@ Examples:
             and not args.read_odo and not args.read_chrono and not args.read_dsp \
             and not args.read_ho_ee and args.read_ram is None \
             and not args.save_sn_file and not args.load_sn_file and not args.write_chain \
+            and not args.dump_flash and not args.restore_flash \
+            and not args.write_image \
             and not args.read_eis_dsp and not args.read_cap_bits \
             and not args.report and args.write_addr is None:
         # pylint: enable=too-many-boolean-expressions
@@ -5499,6 +5749,35 @@ Examples:
                     return
             print("\n=== Complete Engine Data Dump ===\n")
             prog.read_all_engine_data()
+            return
+
+        # Full flash dump (donor imaging / standalone backup)
+        if args.dump_flash:
+            if not args.no_setup:
+                if not prog.setup_engine():
+                    return
+            prog.dump_flash(args.dump_flash, flash_size=args.flash_size)
+            return
+
+        # Restore flash from a .flash_backup image
+        if args.restore_flash:
+            if not args.no_setup:
+                if not prog.setup_engine():
+                    return
+            try:
+                with open(args.restore_flash, 'rb') as f:
+                    backup_data = f.read()
+            except OSError as e:
+                print(f"Cannot read {args.restore_flash}: {e}")
+                return
+            sector = (int(args.restore_sector, 16)
+                      if args.restore_sector else None)
+            rng = ((int(args.restore_range[0], 16),
+                    int(args.restore_range[1], 16))
+                   if args.restore_range else None)
+            prog.restore_flash(backup_data, sector=sector, range_bounds=rng,
+                               force_bootloader=args.force_bootloader,
+                               assume_yes=args.yes)
             return
 
         # Formatted report
@@ -5668,6 +5947,20 @@ Examples:
                               f" 0x{b:02X} = bits {bit_str}")
             else:
                 print("  Could not read capability bits.")
+            return
+
+        # Program engine from a consumer download zip (chain + sound)
+        if args.write_image:
+            if not args.no_setup:
+                if not prog.setup_engine():
+                    return
+            prog.write_consumer_zip(
+                args.write_image,
+                preserve_mfg=not args.no_preserve_mfg,
+                validate=not args.no_validate,
+                stamp_loader=not args.no_loader_stamp,
+                backup_flash=args.backup_flash,
+                assume_yes=args.yes)
             return
 
         # Write chain/DSP code
