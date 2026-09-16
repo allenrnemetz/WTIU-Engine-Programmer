@@ -1,11 +1,23 @@
-*.bin
+# Build machinery (kept local, not committed)
+build_exe.py
+build_exe.bat
+WTIU-Firmware-Patcher.spec
+build/
+dist/
+
+# Bundled third-party squashfs-tools-ng binaries (downloaded locally)
+win_tools/
+
+# Python
 __pycache__/
 *.pyc
+
+# Firmware images & MTH content — stock input and patched output are MTH
+# copyrighted and must not be committed/distributed (see NOTICE)
+*.bin
 *.mfg-recovery.bin
 *.sector-*-recovery.bin
 *.flash_backup
-
-# MTH content — never commit
 *.mth
 *.zip
 r22a_sw1200/

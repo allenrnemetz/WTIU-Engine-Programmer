@@ -18,7 +18,8 @@ With the patched firmware, the WTIU can:
 
 | File | Purpose |
 |---|---|
-| `wtiu_fw_patch.py` | Patches a stock WTIU firmware image into the patched `v1.3.3` image |
+| `wtiu_patcher_gui.py` | GUI firmware patcher — what the packaged `.exe` runs |
+| `wtiu_fw_patch.py` | Firmware patcher core, also usable as a CLI |
 | `wtiu_patch_data.py` | The binary patch hunks (required by the patcher) |
 | `mth_engine_programmer.py` | Engine programmer — CLI and library |
 | `mth_programmer_ui.py` | Tkinter GUI front-end |
@@ -40,19 +41,36 @@ This repo distributes **only the patch hunks** — a list of byte
 modifications applied to binaries extracted from *your own* stock firmware
 image. No MTH code is included or distributed. The patched firmware image
 produced by the patcher is for your own use; do not distribute the output
-`.bin`.
+`.bin`. See `NOTICE` for the full legal statement.
 
 ## Part 1 — Patch the firmware
 
-Requires **Linux or WSL** with `squashfs-tools` installed
-(`sudo apt install squashfs-tools`), plus a stock MTH firmware image
-(`WTIU-v1.3.0-20250814.bin` — the patcher verifies it by SHA-256 and refuses
-anything else).
+### Easy way (Windows, no installs)
+
+1. Download `WTIU-Firmware-Patcher.exe` and a stock MTH firmware image
+   (`WTIU-v1.3.0-20250814.bin` — the patcher verifies it by SHA-256 and
+   refuses anything else).
+2. Double-click the exe (or drag the stock `.bin` onto it), pick the stock
+   image, click **Patch Firmware**.
+3. It writes `WTIU-v1.3.3-20260911.bin` next to the input.
+
+The exe is self-contained: Python, the patcher, and the squashfs repack
+tools are all bundled. Windows may show a SmartScreen prompt for unsigned
+apps — click **More info → Run anyway**.
+
+### From source (any OS)
 
 ```bash
 python3 wtiu_fw_patch.py WTIU-v1.3.0-20250814.bin
 # produces WTIU-v1.3.3-20260911.bin next to the input
 ```
+
+The patcher prefers `sqfs2tar`/`tar2sqfs` from squashfs-tools-ng
+(`sudo apt install squashfs-tools-ng`; Windows binaries at
+<https://infraroot.at/pub/squashfs/windows/> — drop them in a local
+`win_tools/bin/` folder and they'll be picked up automatically) and falls
+back to classic `unsquashfs`/`mksquashfs` (`sudo apt install squashfs-tools`
+/ `brew install squashfs`).
 
 Flash the output through the WTIU's normal update path (LuCI web UI →
 System → Flash Firmware, or `sysupgrade` over SSH). The stock sysupgrade

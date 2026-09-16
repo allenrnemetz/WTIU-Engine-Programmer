@@ -1,0 +1,40 @@
+NOTICE — Legal / Intellectual Property
+
+1. Independence and trademarks
+   This is an independent, unofficial hobby project. It is not affiliated
+   with, endorsed by, or sponsored by MTH Electric Trains. "MTH", "WTIU",
+   "DCS", and "Proto-Sound" are trademarks of their owner; they are used
+   here only to identify compatibility (nominative use).
+
+2. No MTH code is distributed
+   This repository contains only original work:
+   - wtiu_patch_data.py stores binary patches as (offset, stock-bytes hash,
+     new bytes) hunks. The new bytes are original code written for this
+     project; the stock bytes are represented only by their SHA-256
+     fingerprints and are never included.
+   - The wire-protocol implementation in mth_engine_programmer.py is an
+     original, clean-room style implementation written for
+     interoperability with hardware the user owns.
+   - The SPECK_KEY constant is a 64-bit protocol key — functional data
+     required for interoperability, not expressive content.
+   Users must supply their own stock MTH firmware image, which the patcher
+   verifies by SHA-256 before modifying.
+
+3. No circumvention
+   No encryption, signature check, or other technological protection
+   measure is bypassed: the WTIU's stock sysupgrade path accepts unsigned
+   firmware images by design, and the patcher does not defeat any access
+   control. This project's purpose is repair/interoperability on the
+   user's own hardware.
+
+4. Output firmware images
+   The patched .bin produced by this tool contains MTH copyrighted
+   firmware. It is for your own personal use only. DO NOT distribute
+   patched images, stock images, or extracted binaries. The .gitignore in
+   this repo blocks such files from being committed.
+
+5. Disclaimer
+   Provided "as is", without warranty of any kind. Flashing locomotive or
+   TIU firmware can permanently damage the hardware. Nothing here grants
+   rights under third-party patents; this is a personal-use research tool.
+   Use at your own risk and keep backups.
