@@ -1,6 +1,7 @@
 # Build machinery (kept local, not committed)
 build_exe.py
 build_exe.bat
+version_info.txt
 *.spec
 build/
 dist/
