@@ -1,8 +1,9 @@
-# MTH WTIU Programmer
+# WTIU Engine Programmer
 
-Flash programming support for the MTH **WTIU** (WiFi Track Interface Unit) —
-brings the WTIU's engine-programming capabilities up to par with the
-original TIU for PS3 locomotives.
+Unofficial, community-built flash programming support for the **MTH WTIU**
+(WiFi Track Interface Unit) — brings the WTIU's engine-programming
+capabilities up to par with the original TIU for PS3 locomotives.
+Not affiliated with or endorsed by MTH Electric Trains.
 
 With the patched firmware, the WTIU can:
 
@@ -22,7 +23,7 @@ With the patched firmware, the WTIU can:
 | `wtiu_fw_patch.py` | Firmware patcher core, also usable as a CLI |
 | `wtiu_patch_data.py` | The binary patch hunks (required by the patcher) |
 | `mth_engine_programmer.py` | Engine programmer — CLI and library |
-| `mth_programmer_ui.py` | Tkinter GUI — what `MTH-WTIU-Programmer.exe` runs |
+| `mth_programmer_ui.py` | Tkinter GUI — what `WTIU-Engine-Programmer.exe` runs |
 
 ## How it works
 
@@ -47,7 +48,7 @@ produced by the patcher is for your own use; do not distribute the output
 
 ### Easy way (Windows, no installs)
 
-Download `MTH-WTIU-Programmer.exe` — one self-contained app for the whole
+Download `WTIU-Engine-Programmer.exe` — one self-contained app for the whole
 workflow (firmware patching **and** engine programming). Python, the
 squashfs repack tools, and WTIU network discovery are all bundled.
 Windows may show a SmartScreen prompt for unsigned apps — click
@@ -81,7 +82,7 @@ required firmware metadata is embedded and format-verified.
 
 ## Part 2 — Program engines
 
-The `MTH-WTIU-Programmer.exe` covers this too — no Python needed.
+The `WTIU-Engine-Programmer.exe` covers this too — no Python needed.
 From source it requires **Python 3** with `zeroconf`
 (`pip install zeroconf`) for WTIU auto-discovery, plus `tkinter`
 (bundled with most Python installs).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # pylint: disable=too-many-lines
 """
-MTH Engine Manufacturing Data Programmer
+Engine Manufacturing Data Programmer (for the MTH WTIU)
 
 Reads and writes engine manufacturing data (engine name, cab number, road name,
 serial number, etc.) through the WTIU TCP bridge using the DCS loader protocol.
@@ -5330,7 +5330,7 @@ def main():
     # pylint: disable=too-many-return-statements,too-many-nested-blocks
     """Main entry point: parse arguments and dispatch subcommands."""
     parser = argparse.ArgumentParser(
-        description='MTH Engine Manufacturing Data Programmer',
+        description='Engine Manufacturing Data Programmer (for the MTH WTIU)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 WARNING: The --write command modifies engine flash memory. Always do a

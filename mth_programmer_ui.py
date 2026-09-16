@@ -61,7 +61,7 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
 
     def __init__(self, root):
         self.root = root
-        self.root.title("MTH Engine Programmer")
+        self.root.title("WTIU Engine Programmer")
         self.root.geometry("900x900")
 
         self.conn = None

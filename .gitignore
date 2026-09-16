@@ -1,7 +1,7 @@
 # Build machinery (kept local, not committed)
 build_exe.py
 build_exe.bat
-WTIU-Firmware-Patcher.spec
+*.spec
 build/
 dist/
 
