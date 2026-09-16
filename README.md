@@ -18,11 +18,11 @@ With the patched firmware, the WTIU can:
 
 | File | Purpose |
 |---|---|
-| `wtiu_patcher_gui.py` | GUI firmware patcher — what the packaged `.exe` runs |
+| `wtiu_patcher_gui.py` | Firmware patcher panel — embedded as the Firmware tab, also standalone |
 | `wtiu_fw_patch.py` | Firmware patcher core, also usable as a CLI |
 | `wtiu_patch_data.py` | The binary patch hunks (required by the patcher) |
 | `mth_engine_programmer.py` | Engine programmer — CLI and library |
-| `mth_programmer_ui.py` | Tkinter GUI front-end |
+| `mth_programmer_ui.py` | Tkinter GUI — what `MTH-WTIU-Programmer.exe` runs |
 
 ## How it works
 
@@ -47,16 +47,18 @@ produced by the patcher is for your own use; do not distribute the output
 
 ### Easy way (Windows, no installs)
 
-1. Download `WTIU-Firmware-Patcher.exe` and a stock MTH firmware image
-   (`WTIU-v1.3.0-20250814.bin` — the patcher verifies it by SHA-256 and
-   refuses anything else).
-2. Double-click the exe (or drag the stock `.bin` onto it), pick the stock
-   image, click **Patch Firmware**.
-3. It writes `WTIU-v1.3.3-20260911.bin` next to the input.
+Download `MTH-WTIU-Programmer.exe` — one self-contained app for the whole
+workflow (firmware patching **and** engine programming). Python, the
+squashfs repack tools, and WTIU network discovery are all bundled.
+Windows may show a SmartScreen prompt for unsigned apps — click
+**More info → Run anyway**.
 
-The exe is self-contained: Python, the patcher, and the squashfs repack
-tools are all bundled. Windows may show a SmartScreen prompt for unsigned
-apps — click **More info → Run anyway**.
+1. Open the **Firmware** tab, pick your stock
+   `WTIU-v1.3.0-20250814.bin` (the patcher verifies it by SHA-256 and
+   refuses anything else), click **Patch Firmware**.
+2. It writes `WTIU-v1.3.3-20260911.bin` next to the input.
+3. Flash it via the WTIU web UI, then use the other tabs for engine
+   programming — same exe, nothing else to install.
 
 ### From source (any OS)
 
@@ -79,9 +81,10 @@ required firmware metadata is embedded and format-verified.
 
 ## Part 2 — Program engines
 
-Requires **Python 3** with `zeroconf` (`pip install zeroconf`) for WTIU
-auto-discovery. The GUI also needs `tkinter` (bundled with most Python
-installs).
+The `MTH-WTIU-Programmer.exe` covers this too — no Python needed.
+From source it requires **Python 3** with `zeroconf`
+(`pip install zeroconf`) for WTIU auto-discovery, plus `tkinter`
+(bundled with most Python installs).
 
 GUI:
 

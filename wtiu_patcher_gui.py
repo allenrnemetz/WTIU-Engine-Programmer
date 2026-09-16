@@ -44,12 +44,13 @@ class TextRedirector:
 
 
 class PatcherUI:
-    """Single-purpose window: pick stock .bin -> Patch -> done."""
+    """Single-purpose panel: pick stock .bin -> Patch -> done.
 
-    def __init__(self, root):
-        self.root = root
-        self.root.title("WTIU Firmware Patcher")
-        self.root.geometry("720x460")
+    Usable standalone (parent = tk.Tk) or embedded as a tab
+    (parent = ttk.Frame inside a Notebook)."""
+
+    def __init__(self, parent):
+        self.root = parent
 
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
@@ -59,8 +60,9 @@ class PatcherUI:
 
         self._build_ui()
 
-        # Drag-onto-exe / "Open with" / CLI argument support
-        if len(sys.argv) > 1 and sys.argv[1].lower().endswith('.bin'):
+        # Standalone mode only: drag-onto-exe / "Open with" / CLI argument
+        if isinstance(parent, tk.Tk) and len(sys.argv) > 1 \
+                and sys.argv[1].lower().endswith('.bin'):
             self.set_input(sys.argv[1])
 
     def _build_ui(self):
@@ -185,6 +187,8 @@ class PatcherUI:
 
 def main():
     root = tk.Tk()
+    root.title("WTIU Firmware Patcher")
+    root.geometry("720x460")
     PatcherUI(root)
     root.mainloop()
 

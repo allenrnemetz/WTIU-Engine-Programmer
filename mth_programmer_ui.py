@@ -31,6 +31,7 @@ from mth_engine_programmer import (  # pylint: disable=wrong-import-position
     hex_dump,
     decode_capability_bits,
 )
+from wtiu_patcher_gui import PatcherUI  # pylint: disable=wrong-import-position
 
 
 class TextRedirector:
@@ -111,6 +112,7 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
         self._build_sound_tab(notebook)
         self._build_sn_tab(notebook)
         self._build_chain_tab(notebook)
+        self._build_firmware_tab(notebook)
 
         # Bottom: log output
         log_frame = ttk.LabelFrame(self.root, text="Log Output", padding=4)
@@ -146,6 +148,12 @@ class ProgrammerUI:  # pylint: disable=too-many-instance-attributes
     # ========================================================================
     # Read & Report Tab
     # ========================================================================
+
+    def _build_firmware_tab(self, notebook):
+        """Firmware tab: stock image -> patched image (embeds PatcherUI)."""
+        tab = ttk.Frame(notebook, padding=8)
+        notebook.add(tab, text="Firmware")
+        PatcherUI(tab)
 
     def _build_read_tab(self, notebook):  # pylint: disable=attribute-defined-outside-init
         """Build the Read & Report tab."""
