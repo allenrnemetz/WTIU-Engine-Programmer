@@ -48,33 +48,3 @@ MUX2TIU_HUNKS = [
     (0x05014, '7696440c406295ce', base64.b64decode('9GRjnABzLGAAVgFgAG7knOvjX+YAVwFhwmUA9ABqS+YAUgJh4PMfbgCcIZz/SwBqyuoIYF3hbO8d5+Cn4MUBTQFK9hcAb+DF3eFs7+Hc5Jzd5+TcY5xq7wNhAG/h3OLcRmV0ZKDoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')),
     (0x0B140, '115bad14f1c9f2c0', base64.b64decode('9GSgnMOcRJxL5gD0AGgD4gBQAmHg8x9q4ZwAa3PiBFQuYfHlgKQNdCRhh2UBTMPkwPceMAEo0+SR5YCkCnQZYYdlAkzD5MD3HjABKNPkkeWApC10DmGHZQNMw+TA9x4wASjT5JHlgKQ+dANhQ2UESgcQAUsBT8rv0WEAb88XAGp0ZKDo')),
 ]
-
-# lib/firmware/tp-v2.05-0-g049bee4.bin: STM32G4 Track Processor firmware.
-# ZW-L tolerance patch: the TP classifies the input waveform
-# (OFF/AC/DC/LF PDC/HF AC/HF PDC) from 128-sample ADC captures and faults
-# any channel whose measured class is "HF" (class > 3).  A triac-chopped
-# transformer output (Lionel ZW-L) inflates the symmetry metric, so the
-# input lands in an HF class or flaps on the boundary -> "Voltage fault"
-# -> channel disable/retry cycling (relay clicking, engines dropping).
-#
-# Hunks below widen the acceptance window and slow the fault reaction:
-#   0x4E6E/0x4E8E  classifier sym boundary 35 -> 96 (both magnitude
-#                  branches: AC->HF-AC and LF-PDC->HF-PDC)
-#   0x4EB2         class-commit debounce 3 -> 8 consistent samples
-#   0x5344         in/out amplitude delta tolerance 749 -> 3000
-#   0x5370/0x5376  fault persistence 4 -> 13 consecutive, 66 -> 240 total
-# Current/temperature fault paths and the class>3 acceptance gates are
-# intentionally left alone -- protection widened, not removed.
-# Retune: bump 0x60 -> 0x80 (hunks 1-2) or accept classes <= 5 (the
-# cmp #3 sites at 0x55B8/0x55CA/0x55CE/0x55D6/0x55DA) if still faulting.
-TP_STOCK_SHA256 = 'e3171a8359eb23f339df9668abc78f4c9fc265b9b5b1719023cf48676cdaa6eb'
-TP_PATCHED_SHA256 = 'ac6dae707c54eb43cbb2dfde9661d3623b5d4ccbe83760c73a9bf5027d17009a'
-TP_SIZE = 25040
-TP_HUNKS = [
-    (0x04E6E, 'c366b28ed174bb86', base64.b64decode('YCs=')),
-    (0x04E8E, 'c366b28ed174bb86', base64.b64decode('YCs=')),
-    (0x04EB2, '2434fdab84f43e54', base64.b64decode('Byo=')),
-    (0x05344, '75aae4aa74e2657d', base64.b64decode('QPa4MA==')),
-    (0x05370, 'f6bd98418bd7d8ba', base64.b64decode('DCk=')),
-    (0x05376, '0141ee4c773386d7', base64.b64decode('8Cg=')),
-]
